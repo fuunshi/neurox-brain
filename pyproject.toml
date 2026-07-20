@@ -1,0 +1,47 @@
+[project]
+name = "neurox-brain"
+version = "0.1.0"
+description = "Turns expository text into flashcards, quizzes, keywords and summaries."
+readme = "README.md"
+requires-python = ">=3.11"
+
+# Deliberately short. Every entry here is a thing that has to be installed,
+# audited and kept working on a small VPS, so the bar is "this would be a lot of
+# code to write and get right" rather than "this is convenient".
+#
+# Notably absent: scikit-learn. TF-IDF over one document is term counting and a
+# logarithm, and the IDF half needs a document-frequency count this service
+# keeps itself. Importing a 90MB scientific stack to compute `log(N/df)` would
+# be the wrong trade, and it hides an algorithm that is worth being able to
+# explain. Same reasoning for TextRank: PageRank over a sentence graph is thirty
+# lines of numpy.
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "spacy>=3.8",
+    "nltk>=3.9",
+    "numpy>=1.26",
+    "httpx>=0.27",
+    "aio-pika>=9.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[project.scripts]
+neurox-brain = "neurox_brain.main:app"
+neurox-brain-worker = "neurox_brain.worker:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

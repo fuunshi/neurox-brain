@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+# The document-frequency counts. Machine state, not source: it rebuilds by being
+# used, and committing it would mean every deployment inherits one developer's
+# corpus. See docs/operations.md.
+data/corpus.json
