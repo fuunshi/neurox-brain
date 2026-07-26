@@ -33,24 +33,35 @@ python -m nltk.downloader wordnet omw-1.4
 Then run it:
 
 ```bash
-uvicorn neurox_brain.main:app --host 0.0.0.0 --port 8000   # HTTP service
+./scripts/dev.sh                                           # HTTP service, dev mode
+uvicorn neurox_brain.main:app --host 0.0.0.0 --port 8000   # HTTP service, explicitly
 python -m neurox_brain.worker                              # queue worker
+# or, from the console scripts an editable install creates:
+neurox-brain-worker
 ```
 
-**The install step is not optional, and there is no error message that says so.**
-This tree's `.venv` has the dependencies but not the package itself, and
-`uvicorn neurox_brain.main:app` from the repository root fails with:
+`scripts/dev.sh` is the local-development entry point: it runs uvicorn with
+`--reload`, binds `${BRAIN_HOST:-127.0.0.1}` and `${BRAIN_PORT:-8000}`, and sets
+`PYTHONPATH=src` itself. `scripts/worker.sh` does the same for the queue worker
+(`PYTHONPATH=src .venv/bin/python -m neurox_brain.worker`); per its comment it
+"requires `BRAIN_TRANSPORT=amqp` and a broker". Do not put `--reload` in front of
+anything but a dev box — it watches the tree and restarts workers, which reloads
+the model and drops in-flight work.
+
+**The install step is not optional.** `[tool.setuptools.packages.find] where =
+["src"]` puts the package under `src/`, so `neurox_brain` is importable only once
+something adds it to `sys.path`: either `pip install -e .` (which is what
+`.venv` in this tree has — an `__editable__.neurox_brain-0.1.0.pth`), or
+`PYTHONPATH=src`, which is what `scripts/dev.sh` and `scripts/worker.sh` set. Skip
+both and `uvicorn neurox_brain.main:app` fails with, and only with:
 
 ```
 ModuleNotFoundError: No module named 'neurox_brain'
 ```
 
-Either `pip install -e .` (preferred — it also gives you the console scripts) or
-run with `PYTHONPATH=src`. `[tool.setuptools.packages.find] where = ["src"]` means
-the package itself lives under `src/`, or it means an editable install that puts
-it on `sys.path`. There is no `scripts/dev.sh` in this repository, though
-`flash-cards-backend/.env.template` refers to one — the commands above are the
-setup.
+The `neurox-brain` console script that the install creates points at the ASGI
+application object rather than a function, so it is not runnable — use `uvicorn`.
+`neurox-brain-worker` is. See `docs/architecture.md`.
 
 **Configuration is environment variables only.** `config.py` reads `os.environ`
 at import; there is no config file, and no `python-dotenv` call anywhere in
@@ -113,8 +124,8 @@ supported state (the point of `config.py`'s docstring).
 
 | Variable | Default | What changing it does |
 | --- | --- | --- |
-| `BRAIN_HOST` | `0.0.0.0` | **Read by nothing.** It is a documented value for the deployment, not a control: `uvicorn` takes the bind address from its own `--host` flag, which is how `main.py`'s docstring starts the service. |
-| `BRAIN_PORT` | `8000` | Same — `uvicorn --port` is what actually binds. |
+| `BRAIN_HOST` | `0.0.0.0` | Read by `scripts/dev.sh`, which passes it to `uvicorn --host`. **No Python code reads it** — a container that runs `uvicorn` directly gets the bind address from its own command line, so set it there too (or instead). |
+| `BRAIN_PORT` | `8000` | Same, for `uvicorn --port`. The service's own default of 8000 is what the API's `NEUROX_BRAIN_URL` assumes. |
 
 ### Model
 
@@ -239,7 +250,9 @@ and keeps the counts in one JSON file.
 - **Where.** `BRAIN_CORPUS_PATH`, defaulting to `data/corpus.json` in the
   repository root — resolved from the package's own location
   (`Path(__file__).resolve().parents[3] / "data" / "corpus.json"`), "so the
-  service finds the same file whatever it was started from."
+  service finds the same file whatever it was started from." It is deliberately
+  in `.gitignore`: "machine state, not source: it rebuilds by being used, and
+  committing it would mean every deployment inherits one developer's corpus."
 - **What.** JSON, one document count and one term map:
 
   ```json
@@ -361,7 +374,7 @@ all with prefetch.
 
 | Symptom | Likely cause | What to do |
 | --- | --- | --- |
-| Start-up fails with `ModuleNotFoundError: No module named 'neurox_brain'` | The package is not installed in the interpreter that is running `uvicorn`. | `pip install -e .`, or run with `PYTHONPATH=src`. |
+| Start-up fails with `ModuleNotFoundError: No module named 'neurox_brain'` | The package is not installed in the interpreter that is running `uvicorn`, and nothing set `PYTHONPATH`. | `pip install -e .`, run with `PYTHONPATH=src`, or use `./scripts/dev.sh`, which sets it. |
 | `/health` says `loading` forever, `/analyse` returns 503 `spaCy model 'x' is not installed` | `BRAIN_SPACY_MODEL` names a model that is not downloaded in this interpreter. | `python -m spacy download <name>`. Note the download is per-interpreter, so a venv that is not the one running uvicorn will not help. |
 | `/analyse` works but a part route returns `500 Internal Server Error` (plain text, no envelope) | Two known causes: `limit` is above that route's option maximum (`/quiz` and `/keywords` cap at 100, `/summary` at 50), or the model is missing. The part routes have no error handling. | Keep `limit` ≤ 50 on part routes, or use `/analyse` where the bound is validated and a missing model is a 503. See `docs/routes.md`. |
 | Start-up log shows `wordnet=NO` and `WordNet is unavailable (…)` | NLTK data missing. | `python -m nltk.downloader wordnet omw-1.4`, then restart. Until then, distractors come from the document alone with **no synonym check** — "an option that is also correct can slip through". Quiz questions still generate; they are just more likely to have a second defensible answer. |

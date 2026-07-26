@@ -477,8 +477,8 @@ What a missing model looks like from outside is in `docs/routes.md`: 503 on
 
 | Process | Started with | Serves |
 | --- | --- | --- |
-| HTTP service | `uvicorn neurox_brain.main:app --host 0.0.0.0 --port 8000` | `/health`, `/stats`, and the five extract routes |
-| Queue worker | `python -m neurox_brain.worker` | consumes `brain.jobs`, publishes `brain.results` |
+| HTTP service | `uvicorn neurox_brain.main:app --host 0.0.0.0 --port 8000` (or `./scripts/dev.sh` locally, which adds `--reload`) | `/health`, `/stats`, and the five extract routes |
+| Queue worker | `python -m neurox_brain.worker` (or `./scripts/worker.sh`) | consumes `brain.jobs`, publishes `brain.results` |
 
 `pyproject.toml` declares two console scripts:
 
