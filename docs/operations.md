@@ -232,11 +232,13 @@ works and nothing gets better — you pay 40MB and 250MB of RSS for vectors the
 code refuses to use. `en_core_web_lg` will turn the vector path on, and
 `en_core_web_trf` will too; both are a large step up in memory.
 
-Note also that `.env.example` is out of step with the code here: its comment
-describes `en_core_web_md` as "(default)" and sets `BRAIN_SPACY_MODEL=en_core_web_md`.
-The actual default in `config.py` is `en_core_web_sm`. The example file is not
-loaded by anything, so nothing breaks — but a deployment that copies it line by
-line will run `md` for no benefit.
+`.env.example` and `config.py` agree: both default to `en_core_web_sm`. They did
+not, briefly — the example shipped with `md` and a comment calling it the
+default, written before the vector-pruning finding landed. Nothing loads that
+file, so nothing broke; but a deployment copying it line by line would have run
+`md` for no benefit, and the comment would have told them that was intended.
+Corrected rather than left as a footnote, because a configuration template that
+contradicts its own code is how the next person learns to distrust both.
 
 ---
 
