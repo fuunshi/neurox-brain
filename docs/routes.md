@@ -314,9 +314,9 @@ curl -s -X POST http://localhost:8000/analyse \
   }'
 ```
 
-Real response, from the first request against an empty corpus (7 usable
-sentences, so the summariser used its frequency fallback rather than TextRank —
-see `/summary` below):
+Real response, from the first request against an empty corpus — 4 usable
+sentences, so the summariser used its frequency fallback rather than TextRank
+(see `/summary` below):
 
 ```json
 {
@@ -338,69 +338,55 @@ see `/summary` below):
       "evidence": "A queue is a linear data structure that follows the First In First Out principle."
     },
     {
-      "front": "Recursion",
-      "back": "A technique in which a function calls itself directly.",
+      "front": "A _____ is a linear data structure that follows the Last In First Out principle.",
+      "back": "stack",
       "hint": null,
-      "kind": "DEFINITION",
+      "kind": "CLOZE",
       "confidence": 0.8500000000000001,
-      "evidence": "Recursion is a technique in which a function calls itself directly or indirectly."
-    }
-  ],
-  "quiz": [
-    {
-      "format": "MULTIPLE_CHOICE",
-      "prompt": "What is stack?",
-      "options": [
-        "A linear data structure that follows the First In First Out principle.",
-        "A data structure in which each node has at most two children.",
-        "The condition under which a recursive function stops calling itself.",
-        "A linear data structure that follows the Last In First Out principle."
-      ],
-      "correct_index": 3,
-      "explanation": "A linear data structure that follows the Last In First Out principle.",
       "evidence": "A stack is a linear data structure that follows the Last In First Out principle."
-    },
-    {
-      "format": "MULTIPLE_CHOICE",
-      "prompt": "What is queue?",
-      "options": [
-        "A linear data structure that follows the Last In First Out principle.",
-        "A linear data structure that follows the First In First Out principle.",
-        "A data structure in which each node has at most two children.",
-        "The condition under which a recursive function stops calling itself."
-      ],
-      "correct_index": 1,
-      "explanation": "A linear data structure that follows the First In First Out principle.",
-      "evidence": "A queue is a linear data structure that follows the First In First Out principle."
     }
   ],
+  "quiz": [],
   "keywords": [
     {"term": "Stack", "score": 0.847, "count": 2},
-    {"term": "Queue", "score": 0.8182, "count": 2},
-    {"term": "Push operation", "score": 0.5159, "count": 1},
-    {"term": "Pop operation", "score": 0.5097, "count": 1},
-    {"term": "Element", "score": 0.4918, "count": 1}
+    {"term": "Queue", "score": 0.7981, "count": 2},
+    {"term": "Push operation", "score": 0.5109, "count": 1},
+    {"term": "Pop operation", "score": 0.5004, "count": 1},
+    {"term": "Element", "score": 0.4858, "count": 1}
   ],
   "summary": [
     {
       "text": "A stack is a linear data structure that follows the Last In First Out principle.",
-      "score": 0.183333,
+      "score": 0.158889,
       "index": 0
     },
     {
       "text": "The push operation adds an element to the top of the stack, and the pop operation removes the element at the top.",
-      "score": 0.180952,
+      "score": 0.179167,
       "index": 1
     }
   ],
-  "stats": {"sentences": 7, "tokens": 116, "chunks": 34, "elapsed_ms": 723, "model": "en_core_web_sm"}
+  "stats": {"sentences": 4, "tokens": 69, "chunks": 19, "elapsed_ms": 617, "model": "en_core_web_sm"}
 }
 ```
 
-One thing to notice in that output: `confidence` is `0.8500000000000001`. The
-scores are a weighted sum of floats and are not rounded (`definitions._confidence`
-clamps to `[0, 1]` and returns as-is), unlike `Keyword.score`, which is rounded
-to four places at construction. If a caller displays the number, format it.
+Two things to notice in that output:
+
+- `confidence` is `0.8500000000000001`. The scores are a weighted sum of floats
+  and are not rounded (`definitions._confidence` clamps to `[0, 1]` and returns
+  as-is), unlike `Keyword.score`, which is rounded to four places at
+  construction. If a caller displays the number, format it.
+- `quiz` is empty, and that is the distractor rule working rather than a
+  failure. Every option on a definition question is another *definition from the
+  same document* (`distractors.for_definitions`, whose preferred source is "other
+  items from the same document"), and this text defines two terms, so there is
+  one candidate distractor for each. `distractors.has_enough` wants three, and
+  `build_quiz` drops a question it cannot complete rather than padding it. The
+  `/quiz` example below, on a text with four definitions, returns two questions.
+
+`cards` shows the ordering the pipeline produces: definitional cards first, then
+cloze, both by descending confidence. Three cards came back for `max_cards: 3`
+and none was padded — the text simply had that many.
 
 ---
 
@@ -562,10 +548,12 @@ curl -s -X POST http://localhost:8000/keywords \
 ]
 ```
 
-Those numbers are several times the `/analyse` example's for the same vocabulary,
-and the difference is not a bug or a rounding artefact: the `/analyse` example was
-the first request against an empty corpus, and this one ran after three documents
-had been counted. The IDF half of the score moved. It is the clearest
+Those numbers are two to four times the `/analyse` example's for the same
+vocabulary (`Stack` 0.847 → 2.0712, `Push operation` 0.5109 → 2.0487,
+`Element` 0.4858 → 1.9318), and the difference is not a bug or a rounding
+artefact: the `/analyse` example was the first request against an empty corpus,
+and this one ran after three documents had been counted. The IDF half of the
+score moved. It is the clearest
 demonstration of why the route docstring says the scores are comparable "within
 one response, not across responses" — and of what `/stats` is reporting.
 
@@ -660,42 +648,41 @@ ones a caller will hit while integrating.
 | Unknown path | 404 | `{"detail":"Not Found"}` | **no** |
 | Wrong method on a known path | 405 | `{"detail":"Method Not Allowed"}` | **no** |
 
-The first two gaps have the same cause: only `/analyse` has a `try`/`except`
-around the pipeline, and only `/analyse` checks `settings.max_text_chars`. The
-part routes construct `AnalysisOptions(...)` directly and call
-`analyse_module.analyse(...)` unguarded, so:
+All five extraction routes now fail the same way. They did not, and the three
+differences are worth recording because each produced a wrong answer rather
+than a missing one:
 
-- **`/quiz`, `/keywords` and `/summary` return a bare 500 when `limit` exceeds the
-  option it maps to.** `TextRequest.limit` allows up to 200, but
-  `max_quiz_questions` and `max_keywords` stop at 100 and
-  `max_summary_sentences` at 50. The `pydantic.ValidationError` raised while
-  building `AnalysisOptions` inside the handler is not a
-  `RequestValidationError`, so the handler in `main.py` does not catch it and
-  Starlette returns its default plain-text 500. Verified:
+- **An over-large `limit` returned a bare 500** from `/quiz`, `/keywords` and
+  `/summary`. `TextRequest.limit` allows 200, but `max_quiz_questions` and
+  `max_keywords` stop at 100 and `max_summary_sentences` at 50, and the
+  `pydantic.ValidationError` raised while building `AnalysisOptions` *inside the
+  handler* is not a `RequestValidationError` — so nothing caught it and Starlette
+  returned its default plain-text 500. `/cards` was unaffected only because its
+  two limits happen to be the same number.
 
-  ```
-  $ curl -s -o /dev/null -w '%{http_code}\n' -H 'content-type: application/json' \
-      -d '{"text":"A stack is a linear data structure.","limit":150}' localhost:8000/quiz
-  500
-  ```
+  **Fixed** by clamping: `_clamp(payload.limit, MAX_…)` in `routes.py`, with the
+  ceilings named in `schemas.py` so the clamp cannot drift from the bound it
+  clamps to. `limit: 150` now returns 100 keywords rather than an error, which
+  is the better contract — "give me 150" and "give me as many as you have" mean
+  the same thing to a caller.
 
-  `/cards` is unaffected because `limit`'s maximum (200) and `max_cards`'s
-  maximum (200) are the same number. Practical rule: **keep `limit` at or below
-  50 when calling a part route**, or use `/analyse` and set the option directly,
-  where the bound is validated up front and returns a 422.
+- **A missing model returned 500 from a part route** where `/analyse` returned
+  503. Same cause: only `/analyse` had a `try`/`except`. **Fixed** — all five go
+  through `_run()`, which maps a missing model to 503 and a failed extraction to
+  500, and logs the traceback for the latter.
 
-- **A missing model returns a bare 500 from a part route**, where `/analyse`
-  returns 503. Verified with `BRAIN_SPACY_MODEL=en_core_web_does_not_exist`:
-  `/analyse` answered `503` with the envelope and the message
-  `spaCy model 'en_core_web_does_not_exist' is not installed. Run: python -m spacy
-  download en_core_web_does_not_exist`, while `/cards` answered `500 Internal
-  Server Error`.
+- **The size cap applied to `/analyse` only.** **Fixed** — `_run()` checks
+  `settings.max_text_chars` for every route. Note that this check is normally
+  unreachable: the schema already caps `text` at 500,000 characters, the same
+  number as the default `BRAIN_MAX_TEXT_CHARS`, so pydantic answers 422 first.
+  It becomes live only when a deployment *lowers* `BRAIN_MAX_TEXT_CHARS`, which
+  is the case it exists for.
 
-- **The 413 check is `/analyse` only.** A part route does not compare
-  `len(text)` against `BRAIN_MAX_TEXT_CHARS`. Verified on an instance started with
-  `BRAIN_MAX_TEXT_CHARS=100`: a 140-character body was rejected by `/analyse`
-  with the 413 envelope and accepted by `/cards`. The schema's own 500,000
-  character cap still applies everywhere, so the exposure is bounded.
+Every error now leaves through one handler in `main.py`, registered on
+**Starlette's** `HTTPException` rather than FastAPI's — the latter is a
+subclass, and a 404 or 405 comes from the router raising the base class, so the
+obvious registration silently did nothing for exactly the cases it was added
+for. The envelope is identical across 404, 405, 413, 422, 500 and 503.
 
 ---
 

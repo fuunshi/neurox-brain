@@ -1,8 +1,9 @@
 """
 The HTTP surface.
 
-Six routes, and the reason there are six rather than one is that the API calls
-this service in two different moods:
+Seven routes — two about the service itself and five that extract — and the
+reason there is more than one is that the API calls this service in two
+different moods:
 
 - **`POST /analyse`** — "here is a chapter, give me everything". One parse, all
   the output. This is what the API's generation worker uses.
@@ -28,7 +29,7 @@ from __future__ import annotations
 import logging
 import time
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from . import __version__
@@ -37,6 +38,9 @@ from .nlp import analyse as analyse_module
 from .nlp.pipeline import is_model_loaded
 from .nlp.corpus import corpus
 from .schemas import (
+    MAX_KEYWORDS,
+    MAX_QUIZ_QUESTIONS,
+    MAX_SUMMARY_SENTENCES,
     AnalyseRequest,
     AnalysisOptions,
     AnalysisResult,
@@ -140,8 +144,70 @@ async def analyse(payload: AnalyseRequest, request: Request):
         return _error(500, f"Analysis failed: {exc}", str(request.url.path))
 
 
+def _clamp(value: int, maximum: int) -> int:
+    """
+    Bring a caller's `limit` inside what the target option allows.
+
+    **This exists because not clamping produced a 500.** `TextRequest.limit`
+    allows up to 200, but `max_quiz_questions`, `max_keywords` and
+    `max_summary_sentences` each cap lower — 100, 100 and 50. Passing 150
+    straight through meant constructing `AnalysisOptions` raised a pydantic
+    `ValidationError` *inside the handler*, where it is neither a
+    `RequestValidationError` nor caught by anything, so the caller got an
+    unhandled plain-text 500 for what is really a bad request.
+
+    Clamping rather than rejecting is the better contract: "give me 150
+    keywords" and "give me as many as you have" mean the same thing to a
+    caller, and 100 keywords is a more useful answer than an error. FastAPI
+    still enforces the outer bound, so 500 still fails validation properly.
+    """
+    return max(1, min(value, maximum))
+
+
+async def _run(payload: TextRequest, request: Request, options: AnalysisOptions):
+    """
+    Analyse, or raise an error in the shared envelope.
+
+    Every part route goes through here so that all five extraction routes fail
+    the same way. They did not: `/analyse` mapped a missing model to 503 and
+    enforced the size cap, while the four part routes did neither — a missing
+    model gave them a 500, an oversized body was not rejected at all, and the
+    same deployment fault produced a "retryable" answer from one route and an
+    "unexpected" one from another.
+
+    Raises rather than returning an error object so the handler stays a plain
+    `return`. The `HTTPException` is rendered by the handler in `main.py`, which
+    is also what gives the shared envelope to 404s and 405s that FastAPI raises
+    on its own.
+    """
+    if len(payload.text) > settings.max_text_chars:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Text is {len(payload.text)} characters; the limit is "
+                f"{settings.max_text_chars}."
+            ),
+        )
+
+    try:
+        return analyse_module.analyse(payload.text, payload.title, options)
+    except RuntimeError as exc:
+        # Raised by the pipeline when the spaCy model is missing: a deployment
+        # fault, not a bad request, so 503 and retrying is reasonable.
+        logger.error("Model unavailable: %s", exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — see below
+        # Deliberately broad. Analysing arbitrary PDF text means meeting
+        # arbitrary text; an extractor failure must not leave the caller waiting
+        # on a request that will never answer.
+        logger.exception("Analysis failed")
+        raise HTTPException(
+            status_code=500, detail=f"Analysis failed: {exc}"
+        ) from exc
+
+
 @router.post("/cards", response_model=list[GeneratedCard], tags=["extract"])
-async def cards(payload: TextRequest) -> list[GeneratedCard]:
+async def cards(payload: TextRequest, request: Request) -> list[GeneratedCard]:
     """
     Flashcards only.
 
@@ -151,25 +217,27 @@ async def cards(payload: TextRequest) -> list[GeneratedCard]:
     easier to judge with its source attached.
     """
     options = AnalysisOptions(max_cards=payload.limit)
-    return analyse_module.analyse(payload.text, payload.title, options).cards
+    return (await _run(payload, request, options)).cards
 
 
 @router.post("/quiz", response_model=list[GeneratedQuestion], tags=["extract"])
-async def quiz(payload: TextRequest) -> list[GeneratedQuestion]:
+async def quiz(payload: TextRequest, request: Request) -> list[GeneratedQuestion]:
     """
     Multiple-choice questions.
 
-    Every returned question has a correct answer and at least three distractors.
-    Questions that could not be completed are dropped rather than padded — see
-    `build_quiz`. `correct_index` is included and must be stripped before the
-    question reaches a reader.
+    Every returned question has a correct answer and at least three distractors,
+    so a short document can legitimately yield none — see `build_quiz`.
+    `correct_index` is included and must be stripped before the question reaches
+    a reader.
     """
-    options = AnalysisOptions(max_quiz_questions=payload.limit)
-    return analyse_module.analyse(payload.text, payload.title, options).quiz
+    options = AnalysisOptions(
+        max_quiz_questions=_clamp(payload.limit, MAX_QUIZ_QUESTIONS)
+    )
+    return (await _run(payload, request, options)).quiz
 
 
 @router.post("/keywords", response_model=list[Keyword], tags=["extract"])
-async def keywords(payload: TextRequest) -> list[Keyword]:
+async def keywords(payload: TextRequest, request: Request) -> list[Keyword]:
     """
     TF-IDF keywords and keyphrases, best first.
 
@@ -177,18 +245,21 @@ async def keywords(payload: TextRequest) -> list[Keyword]:
     a product of a document-dependent term frequency and a corpus-dependent IDF,
     so two documents' scores are on different scales by construction.
     """
-    options = AnalysisOptions(max_keywords=payload.limit)
-    return analyse_module.analyse(payload.text, payload.title, options).keywords
+    options = AnalysisOptions(max_keywords=_clamp(payload.limit, MAX_KEYWORDS))
+    return (await _run(payload, request, options)).keywords
 
 
 @router.post("/summary", response_model=list[SummarySentence], tags=["extract"])
-async def summary(payload: TextRequest) -> list[SummarySentence]:
+async def summary(payload: TextRequest, request: Request) -> list[SummarySentence]:
     """
     An extractive summary, in reading order.
 
-    Sentences are chosen by TextRank and returned in the order they appear in
-    the source, because a summary in rank order reads as a shuffled document.
-    `score` is included so the interface can say why each was chosen.
+    Sentences are chosen by TextRank — or by frequency, below ten sentences —
+    and returned in the order they appear in the source, because a summary in
+    rank order reads as a shuffled document. `score` is included so an interface
+    can say why each was chosen.
     """
-    options = AnalysisOptions(max_summary_sentences=payload.limit)
-    return analyse_module.analyse(payload.text, payload.title, options).summary
+    options = AnalysisOptions(
+        max_summary_sentences=_clamp(payload.limit, MAX_SUMMARY_SENTENCES)
+    )
+    return (await _run(payload, request, options)).summary

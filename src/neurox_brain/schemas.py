@@ -25,20 +25,34 @@ from pydantic import BaseModel, Field
 # --------------------------------------------------------------------------- #
 
 
+# Ceilings for the per-request options, named so that `routes.py` can clamp to
+# them rather than restating the numbers. A caller passing a larger `limit` than
+# the target option allows used to reach a pydantic `ValidationError` *inside*
+# the handler, which is neither a `RequestValidationError` nor caught by
+# anything — so an over-large limit produced an unhandled 500. Clamping needs
+# the same number the schema enforces; two copies of it is how that breaks.
+MAX_CARDS = 200
+MAX_QUIZ_QUESTIONS = 100
+MAX_KEYWORDS = 100
+MAX_SUMMARY_SENTENCES = 50
+
+
 class AnalysisOptions(BaseModel):
     """What to produce, and how much of it."""
 
     max_cards: int = Field(
         default=25,
         ge=1,
-        le=200,
+        le=MAX_CARDS,
         description=(
             "Upper bound on flashcards. A cap, not a target — a short text "
             "yields fewer, and padding to reach a number is how a deck fills "
             "with questions nobody would ask."
         ),
     )
-    max_quiz_questions: int = Field(default=10, ge=1, le=100)
+    max_quiz_questions: int = Field(
+        default=10, ge=1, le=MAX_QUIZ_QUESTIONS
+    )
     include_cloze: bool = Field(
         default=True,
         description=(
@@ -46,8 +60,10 @@ class AnalysisOptions(BaseModel):
             "wanted, e.g. for a deck that will be exported to Anki as Basic."
         ),
     )
-    max_keywords: int = Field(default=20, ge=1, le=100)
-    max_summary_sentences: int = Field(default=5, ge=1, le=50)
+    max_keywords: int = Field(default=20, ge=1, le=MAX_KEYWORDS)
+    max_summary_sentences: int = Field(
+        default=5, ge=1, le=MAX_SUMMARY_SENTENCES
+    )
 
 
 class AnalyseRequest(BaseModel):

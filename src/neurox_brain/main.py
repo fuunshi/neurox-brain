@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -92,6 +93,45 @@ app.add_middleware(
 )
 
 app.include_router(router)
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_error_handler(request: Request, exc: StarletteHTTPException):
+    """
+    Every `HTTPException`, in the shared envelope.
+
+    **Registered on Starlette's `HTTPException`, not FastAPI's**, and that
+    distinction is the whole reason this handler works at all. FastAPI's is a
+    *subclass* of Starlette's; a 404 or 405 comes from the router raising the
+    base class, so a handler registered on the subclass never sees it. Written
+    the obvious way first, it silently did nothing for exactly the cases it was
+    added for.
+
+    This covers two things at once, and the second is the reason it was added:
+    the errors the routes raise deliberately (an oversized body, a missing
+    model, a failed extraction), **and** the ones FastAPI and Starlette raise on
+    their own — a 404 for an unknown path, a 405 for the wrong method. Without
+    it those two came back as `{"detail": "Not Found"}` in plain text, which is a
+    third shape for the API's error normaliser to handle, on the paths least
+    likely to be exercised in testing.
+
+    Headers are carried across because some exceptions set them, and dropping
+    them silently — a `WWW-Authenticate`, a `Retry-After` — turns a fixable
+    client problem into an unexplained one.
+    """
+    detail = exc.detail
+    message = detail if isinstance(detail, (str, list)) else [str(detail)]
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": False,
+            "statusCode": exc.status_code,
+            "message": message,
+            "path": str(request.url.path),
+        },
+        headers=getattr(exc, "headers", None),
+    )
 
 
 @app.exception_handler(RequestValidationError)
