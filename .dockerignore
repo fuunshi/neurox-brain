@@ -1,0 +1,24 @@
+# See neurox-web/.dockerignore for why this exists.
+
+.venv
+venv
+__pycache__
+*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+
+# The spaCy model and the WordNet corpus are downloaded during the build, on
+# purpose: baking them in is what makes the image start without network access.
+# A local copy must not shadow that.
+data
+corpus/
+
+.env
+.env.*
+
+.git
+.gitignore
+*.log
+.DS_Store

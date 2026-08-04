@@ -20,7 +20,7 @@ existing options:
 | Gemini | Highest — parses and paraphrases | Per card | An API key |
 
 The API prefers this one when `NEUROX_BRAIN_ENABLED=true`. See
-`../flash-cards-backend/src/application/generation/generation.service.ts`.
+`../neurox-backend/src/application/generation/generation.service.ts`.
 
 ## Quick start
 

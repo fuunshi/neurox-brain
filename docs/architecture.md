@@ -42,7 +42,7 @@ model lives, and how the pieces are deployed. The algorithms are in
 The API is the only intended caller. There is no authentication on this service
 and no API-envelope wrapper on responses — the wire format is the pydantic models
 in `src/neurox_brain/schemas.py`, mirrored by hand in
-`flash-cards-backend/src/integrations/neurox-brain/neurox-brain.types.ts`.
+`neurox-backend/src/integrations/neurox-brain/neurox-brain.types.ts`.
 
 ---
 
@@ -94,7 +94,7 @@ way — the contract is the schemas, not the internals.)
 
 This is not aspirational. The API already has three generators behind one
 interface — `CardGenerator` in
-`flash-cards-backend/src/application/generation/generators/card-generator.interface.ts`,
+`neurox-backend/src/application/generation/generators/card-generator.interface.ts`,
 implemented by `heuristic.generator.ts`, `gemini.generator.ts` and
 `nlp.generator.ts`. The brain is one of three implementations and the API's
 generation pipeline does not know which one ran beyond a `provider` string on
@@ -115,7 +115,7 @@ happens in, so it can be checked.
 
 | # | What happens | Where |
 | --- | --- | --- |
-| 1 | `POST /generation/decks/:deckId` validates the source, picks a generator, writes a `GenerationJob` row with `status = PENDING`, and enqueues. Returns immediately. | `flash-cards-backend/src/api/generation-api/generation.controller.ts` → `src/application/generation/generation.service.ts::createJob` |
+| 1 | `POST /generation/decks/:deckId` validates the source, picks a generator, writes a `GenerationJob` row with `status = PENDING`, and enqueues. Returns immediately. | `neurox-backend/src/api/generation-api/generation.controller.ts` → `src/application/generation/generation.service.ts::createJob` |
 | 2 | The queue job is `generate-cards` on the `generation` queue, with `attempts: 2` and exponential backoff from 2000ms. | `src/infra/queue/queue.constants.ts`, `generation.service.ts::createJob` |
 | 3 | The worker consumes the job and calls the same service the HTTP side uses. | `src/worker/workers/generation/generation.worker.processor.ts` |
 | 4 | `processJob` re-reads the job, marks it `RUNNING`, and calls `writeCards`. | `generation.service.ts` |
@@ -206,7 +206,7 @@ format is Redis data structures that a Python process would have to reimplement
 and keep in step with a moving upstream. RabbitMQ speaks AMQP, which is a
 protocol with clients in both languages, and the backend already provisions a
 RabbitMQ service in every compose file." (That same infrastructure note is in
-`flash-cards-backend/.env.template`, where the RabbitMQ service is described as
+`neurox-backend/.env.template`, where the RabbitMQ service is described as
 currently unused and kept for this purpose.)
 
 #### Topology

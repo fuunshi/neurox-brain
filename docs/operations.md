@@ -174,7 +174,7 @@ instead.
 
 Kept here because the two sides have to agree, and the pairing is the usual
 source of a half-configured deployment. All of these live in
-`flash-cards-backend/src/infra/config/neurox-brain.config.ts`.
+`neurox-backend/src/infra/config/neurox-brain.config.ts`.
 
 | API variable | Default | This service's counterpart |
 | --- | --- | --- |

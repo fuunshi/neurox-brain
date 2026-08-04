@@ -204,7 +204,7 @@ weights that pick keywords."
 `text` chunking is the caller's business, from the field description: "the API
 already has a chunker, and having two would mean two answers to 'what is a chunk'
 that disagree." The API's chunker is `ChunkingService` in
-`flash-cards-backend/src/application/source/chunking.service.ts`.
+`neurox-backend/src/application/source/chunking.service.ts`.
 
 ### `options` — `AnalysisOptions`
 
