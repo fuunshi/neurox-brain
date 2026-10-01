@@ -169,9 +169,20 @@ def _display_form(span) -> str:
     return text[0].upper() + text[1:]
 
 
-def extract(doc, limit: int = 20) -> list[Keyword]:
+def score_all(doc) -> list[Keyword]:
     """
-    The document's keywords and keyphrases, best first.
+    Every candidate in the document, scored and sorted best first.
+
+    Split out of `extract` for one specific reason: card selection gates on
+    whether a term is salient, and the API asks this service for
+    `maxKeywords: 1` because it throws the keyword list away. Gating on
+    `extract(doc, limit)` would therefore gate on a *single* term in production
+    while passing every test that leaves the default of 20 in place — a bug that
+    hides behind a default argument.
+
+    The split costs nothing. `extract` already scored every candidate and then
+    discarded all but the top few; this only stops the discarding happening
+    before the other caller has had a look.
 
     Counts are gathered across the whole document before scoring, because IDF is
     a property of the term and the corpus, not of any one occurrence of it.
@@ -235,7 +246,12 @@ def extract(doc, limit: int = 20) -> list[Keyword]:
         )
 
     scored.sort(key=lambda k: (-k.score, k.term.lower()))
-    return scored[:limit]
+    return scored
+
+
+def extract(doc, limit: int = 20) -> list[Keyword]:
+    """The document's keywords and keyphrases, best first, capped at `limit`."""
+    return score_all(doc)[:limit]
 
 
 def vocabulary(doc) -> set[str]:

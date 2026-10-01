@@ -31,92 +31,8 @@ from . import textrank
 from .pipeline import collapse_whitespace, strip_list_marker
 
 
-# Below this many sentences, rank by frequency instead of by graph.
-#
-# The reason is structural rather than empirical guesswork. TextRank's scores
-# come from the stationary distribution of a random walk over a similarity
-# graph, and that distribution only means something when the graph is connected
-# enough to have one. With five sentences, each of which shares vocabulary with
-# one or two others, the walk has nowhere to go: scores collapse toward uniform,
-# or the graph splits and every sentence in a component ties with its
-# neighbours. Both outcomes rank arbitrarily. gensim's maintainers removed their
-# summariser partly over this — on a two-sentence input it returns *nothing*.
-#
-# Frequency scoring has no such failure mode; it is defined for one sentence and
-# for a thousand. And it is not a consolation prize: the frequency-based
-# SumBasic came within about a percentage point of DUC-2004's best system, which
-# is the most robust result in the whole extractive-summarisation literature.
-GRAPH_MIN_SENTENCES = 10
 
-
-def _frequency_rank(sentences: list) -> list[textrank.RankedSentence]:
-    """
-    Rank sentences by the weight of the content words they contain.
-
-    Three adjustments, each for a known problem:
-
-    - **Length normalisation.** Without it the longest sentence wins always,
-      because it contains the most words. Dividing by the square root of the
-      length is the usual compromise: it penalises padding without making short
-      sentences unbeatable.
-    - **A positional prior.** Earlier sentences are likelier to introduce the
-      material. Deliberately weak — the lead-bias literature shows this is a
-      newspaper artefact that mostly *does not* hold for lecture notes and
-      academic prose, so it reorders near-ties and nothing else.
-    - **A length floor.** A six-word sentence scores highly on a per-word basis
-      and says nothing.
-    """
-    from collections import Counter
-
-    frequencies: Counter[str] = Counter()
-    for sentence in sentences:
-        for token in sentence:
-            if token.is_alpha and not token.is_stop and len(token.text) > 2:
-                frequencies[token.lemma_.lower()] += 1
-
-    if not frequencies:
-        return [
-            textrank.RankedSentence(index=i, text=s.text.strip(), score=0.0)
-            for i, s in enumerate(sentences)
-        ]
-
-    peak = max(frequencies.values())
-    total = len(sentences)
-
-    ranked: list[textrank.RankedSentence] = []
-
-    for index, sentence in enumerate(sentences):
-        words = [
-            token.lemma_.lower()
-            for token in sentence
-            if token.is_alpha and not token.is_stop and len(token.text) > 2
-        ]
-
-        if not words:
-            ranked.append(textrank.RankedSentence(index, sentence.text.strip(), 0.0))
-            continue
-
-        # Mean normalised frequency of the sentence's content words, rather than
-        # their sum: a sum rewards length twice over, once in the numerator and
-        # again through the normalisation that was supposed to correct for it.
-        weight = sum(frequencies[word] / peak for word in words) / len(words)
-
-        length_factor = min(len(words), 30) / 30
-        position_factor = 1.0 + 0.1 * (1.0 - index / max(total, 1))
-
-        ranked.append(
-            textrank.RankedSentence(
-                index=index,
-                text=sentence.text.strip(),
-                score=weight * length_factor * position_factor,
-            )
-        )
-
-    ranked.sort(key=lambda item: (-item.score, item.index))
-    return ranked
-
-
-def summarise(doc, max_sentences: int = 5) -> list[dict]:
+def summarise(doc, max_sentences: int = 5, ranked=None) -> list[dict]:
     """
     The N most representative sentences, in the order they appear in the text.
 
@@ -125,17 +41,18 @@ def summarise(doc, max_sentences: int = 5) -> list[dict]:
     package depend on the wire format, which is the wrong direction for a change
     to travel — a new response field should not be able to alter what gets
     summarised.
+
+    `ranked` lets a caller that has already ranked the document (see
+    `salience.build`) pass the result in rather than paying for it twice. It
+    must be the output of `textrank.rank_sentences` for these same sentences —
+    the point of taking it is to agree on one ranking, not to allow a different
+    one.
     """
     if max_sentences <= 0 or not doc.sentences:
         return []
 
-    # Graph or frequency, decided by how much text there is. See
-    # `GRAPH_MIN_SENTENCES`.
-    ranked = (
-        textrank.rank(doc.sentences)
-        if len(doc.sentences) >= GRAPH_MIN_SENTENCES
-        else _frequency_rank(doc.sentences)
-    )
+    if ranked is None:
+        ranked = textrank.rank_sentences(doc.sentences)
 
     if not ranked:
         return []

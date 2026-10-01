@@ -39,7 +39,7 @@ from ..schemas import (
 )
 from . import cloze as cloze_module
 from . import definitions as definitions_module
-from . import distractors, keywords as keywords_module, summarise
+from . import distractors, keywords as keywords_module, salience, summarise
 from .corpus import corpus
 from .pipeline import parse
 
@@ -203,9 +203,16 @@ def analyse(
     definition_list = definitions_module.extract(doc, limit=options.max_cards * 2)
     keyword_list = keywords_module.extract(doc, limit=options.max_keywords)
 
+    # Ranked once and passed on, rather than ranked here and again in
+    # `summarise`. Two rankings of the same document could disagree about which
+    # algorithm suited it, and nothing would report the disagreement.
+    salience_map = salience.build(doc)
+
     cards = build_cards(definition_list, doc, options)
     quiz = build_quiz(definition_list, options)
-    summary = summarise.summarise(doc, options.max_summary_sentences)
+    summary = summarise.summarise(
+        doc, options.max_summary_sentences, ranked=salience_map.ranked
+    )
 
     # Only now. See the module docstring.
     corpus.observe(keywords_module.vocabulary(doc))
