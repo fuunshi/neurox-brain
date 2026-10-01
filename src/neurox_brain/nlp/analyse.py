@@ -39,7 +39,14 @@ from ..schemas import (
 )
 from . import cloze as cloze_module
 from . import definitions as definitions_module
-from . import distractors, keywords as keywords_module, salience, summarise
+from . import (
+    distractors,
+    facts as facts_module,
+    keywords as keywords_module,
+    salience,
+    selection,
+    summarise,
+)
 from .corpus import corpus
 from .pipeline import parse
 
@@ -72,28 +79,17 @@ def build_cards(
     definition_list,
     doc,
     options: AnalysisOptions,
+    fact_list=(),
 ) -> list[GeneratedCard]:
-    """Definitional cards, plus cloze cards when they were asked for."""
-    cards: list[GeneratedCard] = []
+    """
+    The document's cards: definitions, then whatever else fits, then cloze.
 
-    for definition in definition_list:
-        cards.append(
-            GeneratedCard(
-                # The term alone rather than "What is X?" — the reader sees the
-                # kind of card from its shape, and a question wrapper reads
-                # oddly for terms that are not "what" questions at all, which
-                # includes most of a computing syllabus ("Big-O notation").
-                front=definition.term,
-                back=definition.definition,
-                hint=None,
-                kind="DEFINITION",
-                confidence=definition.confidence,
-                evidence=definition.evidence,
-            )
-        )
-
-        if len(cards) >= options.max_cards:
-            break
+    The selection and its caps live in `selection.py`. What stays here is the
+    cloze half, which is a different kind of card — it is not a fact extracted
+    from the document but a sentence with a hole in it — and is off by default
+    for deck generation.
+    """
+    cards: list[GeneratedCard] = selection.build(definition_list, list(fact_list), options)
 
     if not options.include_cloze or len(cards) >= options.max_cards:
         return cards[: options.max_cards]
@@ -152,6 +148,12 @@ def build_quiz(definition_list, options: AnalysisOptions) -> list[GeneratedQuest
     enough plausible distractors. A question with two options is a coin flip,
     and one padded with nonsense teaches the reader to ignore the options.
     """
+    # Before the distractor work, not after: building the pool runs WordNet
+    # lookups and ranks every candidate by length, and a caller asking for zero
+    # questions should not pay for any of it.
+    if options.max_quiz_questions <= 0:
+        return []
+
     questions: list[GeneratedQuestion] = []
 
     strong = [d for d in definition_list if d.confidence >= MIN_QUIZ_CONFIDENCE]
@@ -208,7 +210,8 @@ def analyse(
     # algorithm suited it, and nothing would report the disagreement.
     salience_map = salience.build(doc)
 
-    cards = build_cards(definition_list, doc, options)
+    fact_list = facts_module.extract(doc, salience_map)
+    cards = build_cards(definition_list, doc, options, fact_list)
     quiz = build_quiz(definition_list, options)
     summary = summarise.summarise(
         doc, options.max_summary_sentences, ranked=salience_map.ranked

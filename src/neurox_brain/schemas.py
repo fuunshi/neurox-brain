@@ -50,14 +50,21 @@ class AnalysisOptions(BaseModel):
             "with questions nobody would ask."
         ),
     )
+    # `ge=0` rather than `ge=1`, because zero is a meaningful request: the API's
+    # card generator does not consume quiz questions at all and used to ask for
+    # `1` as the closest thing to "none". That still made the brain build a
+    # question — with its WordNet lookups and distractor ranking — for output
+    # that was then discarded. Zero now short-circuits before any of it runs.
     max_quiz_questions: int = Field(
-        default=10, ge=1, le=MAX_QUIZ_QUESTIONS
+        default=10, ge=0, le=MAX_QUIZ_QUESTIONS
     )
     include_cloze: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "Also emit cloze cards. Off when only definitional cards are "
-            "wanted, e.g. for a deck that will be exported to Anki as Basic."
+            "Also emit cloze cards. Off by default, matching the product "
+            "decision: a generated deck is facts a reader recalls, not "
+            "sentences with holes in them. Still on for `POST /cards`, which "
+            "asks for it explicitly, and cloze remains a quiz format."
         ),
     )
     max_keywords: int = Field(default=20, ge=1, le=MAX_KEYWORDS)
@@ -102,7 +109,20 @@ class TextRequest(BaseModel):
 # Results
 # --------------------------------------------------------------------------- #
 
-CardKind = Literal["DEFINITION", "CLOZE", "RELATION"]
+# The closed vocabulary of card shapes.
+#
+# `RELATION` was declared here and never produced by anything. It is removed
+# rather than repurposed: the name is genuinely ambiguous — a comparison and a
+# purpose are both relations — so building four specific kinds on top of it
+# would bake the ambiguity into a field the API already reads.
+CardKind = Literal[
+    "DEFINITION",
+    "CLOZE",
+    "PROPERTY",
+    "PROCESS",
+    "COMPARISON",
+    "PURPOSE",
+]
 
 
 class GeneratedCard(BaseModel):

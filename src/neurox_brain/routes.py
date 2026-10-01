@@ -216,7 +216,11 @@ async def cards(payload: TextRequest, request: Request) -> list[GeneratedCard]:
     sentence it came from — a generated card is a proposal, and a proposal is
     easier to judge with its source attached.
     """
-    options = AnalysisOptions(max_cards=payload.limit)
+    # Cloze on explicitly. The option now defaults to off — a generated
+    # deck is facts rather than fill-in-the-blanks — but this route's whole
+    # purpose is "more of what /analyse gave me", and it documents that it
+    # returns both kinds.
+    options = AnalysisOptions(max_cards=payload.limit, include_cloze=True)
     return (await _run(payload, request, options)).cards
 
 
