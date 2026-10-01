@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..schemas import GeneratedCard
-from .facts import COMPARISON, PROCESS, PROPERTY, PURPOSE
+from .facts import COMPARISON, PROCESS, PROPERTY, PROPERTY_NOUNS, PURPOSE
 
 DEFINITION = "DEFINITION"
 
@@ -80,6 +80,19 @@ def build(definition_list, fact_list, options) -> list[GeneratedCard]:
     for definition in definition_list:
         if len(cards) >= options.max_cards:
             break
+
+        # "The advantage of a linked list is its dynamic size" is a *property
+        # statement about the linked list*, and the copular pattern cannot tell
+        # it from a definition. Left alone it produces a card fronted "advantage
+        # of a linked list", which is a card nobody wants, and the real subject
+        # — the linked list — never gets it.
+        #
+        # Suppressed at selection rather than in `definitions`, which cannot
+        # import `PROPERTY_NOUNS` from `facts` without a cycle. The property
+        # family does not yet produce the card this should have been; dropping a
+        # bad card is the improvement available today.
+        if _is_property_of(definition.term):
+            continue
 
         cards.append(
             GeneratedCard(
@@ -200,6 +213,19 @@ def _to_cards(candidates: list[_Candidate]) -> list[GeneratedCard]:
 def _normalise(text: str) -> str:
     """A back, reduced to what makes two of them the same fact."""
     return " ".join(text.lower().split()).rstrip(".")
+
+
+def _is_property_of(term: str) -> bool:
+    """
+    Whether a card front is a property *of* something rather than the thing.
+
+    "advantage of a linked list", "complexity of quicksort", "size of the
+    array" — the term the reader wants is the noun after the `of`, and a front
+    built from the noun before it names a category rather than a subject.
+    """
+    words = term.lower().split()
+
+    return len(words) > 2 and words[0] in PROPERTY_NOUNS and words[1] == "of"
 
 
 # Re-exported for callers that classify without importing `facts`.

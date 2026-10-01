@@ -79,3 +79,19 @@ def test_zero_quiz_questions_skips_the_work(parse):
     )
 
     assert result.quiz == []
+
+
+def test_a_property_of_front_is_suppressed(parse):
+    """
+    "The advantage of a linked list is its dynamic size" is not a definition.
+
+    The copular pattern cannot tell the two apart, so left alone it fronted the
+    card "advantage of a linked list" — a category rather than a subject, and
+    the linked list never got the fact.
+    """
+    text = "The advantage of a linked list is its dynamic size."
+
+    cards = analyse.analyse(text, None, AnalysisOptions(max_cards=10)).cards
+
+    assert all(" of " not in card.front or not card.front.startswith("advantage")
+               for card in cards), [c.front for c in cards]
