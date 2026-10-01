@@ -219,6 +219,14 @@ def _phrase_span(token):
 
     while len(span) and (span[0].is_punct or span[0].is_space):
         span = span[1:]
+
+    # Trailing punctuation is trimmed. Note this cannot repair a phrase whose
+    # closing bracket was never in the subtree to begin with: spaCy attaches a
+    # `)` to the sentence root rather than to the token it closes, so
+    # "a time complexity of O(log n)" arrives here already missing it and the
+    # card back reads "…of O(log n". Recorded in
+    # `docs/algorithms/fact-extraction.md` as a known miss rather than guarded,
+    # because a guard for it was written and never once fired.
     while len(span) and (span[-1].is_punct or span[-1].is_space):
         span = span[:-1]
 
