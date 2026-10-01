@@ -100,9 +100,37 @@ subtree** and excludes the labels that belong to a different clause:
 
 | Excluded | Why |
 | --- | --- |
-| `conj` | "A stack is LIFO **and a queue is FIFO**" — the second half is a sibling, not part of the first |
-| `cc` | the "and" itself |
+| `appos` | a renaming — "My brother, a doctor, …" is a phrase about the brother |
+| `cc` | the "and" itself; recovered by the enclosing range when the conjunct beside it is kept |
 | `mark` | subordinating conjunctions introducing a clause the card does not need |
+
+`conj` is **no longer in that list**, and the reason is worth recording because
+it was a real bug rather than a refinement.
+
+It used to be excluded flatly, on the strength of *"A stack is LIFO and a queue
+is FIFO"* — where the second half is a sibling, not part of the first. But spaCy
+uses the same label for coordination *inside* a noun phrase, and excluding it
+meant
+
+> "A graph is a non-linear data structure consisting of vertices and edges."
+
+produced a card back of "…consisting of vertices." The span is the enclosing
+range over the *kept* tokens, so an excluded token in the middle is swallowed
+back in by accident while one at the **end** has nothing beyond it to be
+swallowed by. The truncated string was also the correct answer and the
+distractor pool for every quiz built from that definition.
+
+A conjunct is now judged by what it hangs off: kept when its head is nominal
+within the phrase, dropped when it coordinates a verb or a clause. Note the
+clause case does not actually depend on the exclusion — in "A stack is LIFO and a
+queue is FIFO" the second clause attaches to the *verb* and never enters the noun
+phrase's subtree at all. The rule is a guard for where that does not hold.
+
+Exclusions now apply to a token **and everything beneath it**. Dropping a head
+while keeping its children strands them: excluding an appositive but not its
+determiner pulled the determiner back into the enclosing span, and the
+appositive pattern produced a *term* of "A binary search tree, a node-based
+tree", which the plausibility filter then discarded.
 | `punct` | trailing commas and full stops |
 
 The subtree can be non-contiguous once exclusions are applied, so the enclosing

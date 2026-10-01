@@ -211,8 +211,8 @@ that disagree." The API's chunker is `ChunkingService` in
 | Field | Type | Default | Constraints | Effect |
 | --- | --- | --- | --- | --- |
 | `max_cards` | `int` | `25` | 1–200 | Upper bound on flashcards, definitional plus cloze. A cap, not a target. |
-| `max_quiz_questions` | `int` | `10` | 1–100 | Upper bound on returned questions. |
-| `include_cloze` | `bool` | `true` | — | Whether cloze cards are emitted as well as definitional ones. |
+| `max_quiz_questions` | `int` | `10` | 0–100 | Upper bound on returned questions. **0 means none, and skips the work** — the distractor pool and its WordNet lookups are not built at all. The API's card generator asks for 0. |
+| `include_cloze` | `bool` | `false` | — | Whether cloze cards are emitted alongside the fact cards. Off by default: a generated deck is facts a reader recalls, not sentences with holes in them. `POST /cards` passes `true` explicitly. |
 | `max_keywords` | `int` | `20` | 1–100 | Upper bound on keywords and keyphrases. |
 | `max_summary_sentences` | `int` | `5` | 1–50 | Upper bound on summary sentences. |
 
@@ -242,7 +242,7 @@ larger `max_cards` costs a little more work in that stage too.
 | `front` | `str` | The term, or a sentence with a `_____` blank for a `CLOZE` card. |
 | `back` | `str` | The definition, or the blanked term with its article stripped. |
 | `hint` | `str \| null` | Always `null` from this service. Nothing sets it. |
-| `kind` | `"DEFINITION" \| "CLOZE" \| "RELATION"` | `"RELATION"` is declared in the schema and never produced. |
+| `kind` | `"DEFINITION" \| "CLOZE" \| "PROPERTY" \| "PROCESS" \| "COMPARISON" \| "PURPOSE"` | `"RELATION"` was declared from the beginning and produced by nothing. It is removed rather than repurposed: the name is ambiguous enough (a comparison and a purpose are both relations) that four specific kinds cannot be built on it. |
 | `confidence` | `float` | 0.0–1.0. See `definitions._confidence`. |
 | `evidence` | `str` | The source sentence, whitespace-collapsed to one line. |
 

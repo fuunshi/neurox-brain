@@ -1,11 +1,21 @@
 """
 Cloze deletion: a sentence with its key term removed.
 
-**Why cloze at all.** A definitional card asks "what is a stack?" and can be
-answered vaguely and still feel right. A cloze asks the reader to produce the
+**Where cloze is used now.** It is no longer part of deck generation. A
+generated deck is facts a reader recalls — definitions, properties, processes,
+comparisons, purposes — and a sentence with a hole in it is a different kind of
+exercise that was crowding those out. Cloze remains available two ways: as a
+quiz format, built in the API from cards the reader already has, and through
+`POST /cards`, which asks for it explicitly.
+
+It is kept in the service rather than deleted because the reasoning below is
+about *what makes a good blank*, and that question does not stop being asked
+just because decks no longer ask it.
+
+**Why it was worth having.** A definitional card asks "what is a stack?" and can
+be answered vaguely and still feel right. A cloze asks the reader to produce the
 exact word in a real sentence, which is a different and often harder kind of
-recall — and it tests the term *in use* rather than in isolation. The two
-complement each other, which is why both are generated.
+recall — and it tests the term *in use* rather than in isolation.
 
 **Choosing what to blank is the entire problem.** Blank the wrong word and the
 card is either unanswerable or trivial:

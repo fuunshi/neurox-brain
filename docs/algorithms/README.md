@@ -127,6 +127,7 @@ feel discouraging:
 | --- | --- | --- |
 | [sentence-filtering.md](sentence-filtering.md) | What is a sentence, and which ones are worth looking at? | spaCy segmentation + discard rules |
 | [definition-extraction.md](definition-extraction.md) | What does this text define? | Dependency patterns over four constructions, plus a guard set |
+| [fact-extraction.md](fact-extraction.md) | What else does it say — properties, processes, comparisons, purpose | Twelve more patterns across four families, gated on document salience |
 | [cloze.md](cloze.md) | What should be blanked? | The definiendum, in its own definitional sentence |
 | [distractors.md](distractors.md) | What wrong answers would a student consider? | Document terms, WordNet as a *filter*, head-noun matching |
 | [keywords-tfidf.md](keywords-tfidf.md) | What is this text about? | TF-IDF over a corpus the service maintains itself |

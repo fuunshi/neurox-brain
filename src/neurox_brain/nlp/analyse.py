@@ -11,11 +11,16 @@ named after it; every judgement about *what to do with the results* lives here.
 1. **Parse once.** Five stages need five different views of the same analysis.
    Parsing per stage would cost five times as much and let the stages disagree
    about sentence boundaries.
-2. **Keywords before cloze.** Cloze needs to know which term in a sentence
-   matters, and that comes from the document's own TF-IDF scores — so keyword
-   extraction has to have run first. This is the one hard ordering constraint.
-3. **Definitions before cards before quiz.** Each consumes the previous one's
-   output. A quiz question with no correct answer is not a question.
+2. **Salience before selection.** Sentence centrality (TextRank) and term
+   weight (TF-IDF) are computed once, by `salience.build`, before anything is
+   chosen — card selection is gated on both, and `summarise` takes the same
+   ranking rather than computing a second one. This is the one hard ordering
+   constraint, and it replaced an earlier one that no longer held: cloze used to
+   need the keyword scores, and since cloze now blanks only a definition's own
+   term it needs nothing of the sort.
+3. **Definitions and facts before cards before quiz.** Each consumes the
+   previous one's output. A quiz question with no correct answer is not a
+   question.
 4. **Corpus last.** The document is added to the IDF corpus only after every
    score has been computed. Doing it first would make the document influence its
    own IDF — subtly, and only on the second request for the same text, which is
