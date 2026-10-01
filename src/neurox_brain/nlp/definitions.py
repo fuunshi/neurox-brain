@@ -103,16 +103,76 @@ class Definition:
     confidence: float
 
 
-# Dependency labels excluded when expanding a token into its phrase. Each one
-# pulls in material that belongs to a *different* clause, which is how a
-# definition ends up containing the sentence's other half:
+# Dependency labels marking a token as belonging to a *different* role than the
+# phrase being built. Each is excluded **together with everything beneath it**,
+# because dropping a head while keeping its children strands them: excluding an
+# appositive but not its determiner pulls the determiner back in, and the term
+# comes out as "A binary search tree, a node-based".
 #
-#   conj — "A stack is a LIFO structure and a queue is FIFO": the second half
-#          is a child of the first by conjunction and is not part of it.
-#   cc   — the "and" itself.
-#   mark — a subordinating conjunction ("that", "which") introducing a clause
-#          the reader does not need in a card back.
-EXCLUDED_FROM_PHRASE = {"conj", "cc", "mark", "punct"}
+#   mark  — a subordinating conjunction ("that", "which") introducing a clause
+#           the reader does not need in a card back.
+#   appos — a renaming. "My brother, a doctor, …" is a phrase about the
+#           brother; the doctor is a second nominal, not a continuation of the
+#           first. Before this was excluded, the appositive pattern produced a
+#           *term* of "A binary search tree, a node-based tree" and the
+#           plausibility filter then threw the whole card away.
+#   cc    — the "and" itself. Left out of the kept set and recovered by the
+#           enclosing range whenever the conjunct beside it is kept, which is
+#           the behaviour that makes "vertices and edges" read correctly.
+EXCLUDED_FROM_PHRASE = {"mark", "appos", "cc"}
+
+
+def _conjunct_belongs_to_phrase(token) -> bool:
+    """
+    Whether a `conj` continues this phrase or opens a second clause.
+
+    spaCy labels both with the same dependency, and the two are separable only
+    by what the conjunct hangs off: "vertices and edges" coordinates two nouns
+    *inside* the phrase, while "A stack is LIFO and a queue is FIFO" coordinates
+    two clauses.
+
+    In practice the parser attaches a conjoined clause to the verb, so it never
+    lands in a noun phrase's subtree at all — verified on both sentences. This
+    is the guard for the cases where that does not hold.
+    """
+    head = token.head
+
+    # "a, b, and c": the outer conjunct has already been judged.
+    if head.dep_ == "conj":
+        return True
+
+    return head.pos_ not in ("VERB", "AUX")
+
+
+def _is_excluded(token, root) -> bool:
+    """
+    Whether a token, or anything it hangs from up to `root`, is excluded.
+
+    Walking the ancestry rather than testing the token alone is what makes the
+    exclusions work at depth. `root` is exempt because callers pass an
+    appositive token as the root when they want *its* phrase — the root is the
+    thing being expanded, whatever its own dependency happens to be.
+    """
+    # Compared by token index, not by object identity. spaCy does not promise
+    # that two accesses to the same token return the same Python object, and
+    # when they do not, `node is not root` is true forever and the walk never
+    # terminates — which is exactly what the first version of this did.
+    node = token
+    while node.i != root.i:
+        if node.dep_ in EXCLUDED_FROM_PHRASE:
+            return True
+        if node.dep_ == "conj" and not _conjunct_belongs_to_phrase(node):
+            return True
+
+        # The document root's `head` is itself. Without this the walk spins on
+        # any token whose ancestry never reaches `root`, which is every token
+        # whenever `root` is not one of its ancestors.
+        parent = node.head
+        if parent.i == node.i:
+            return False
+        node = parent
+
+    return False
 
 
 def _phrase_span(token):
@@ -134,7 +194,7 @@ def _phrase_span(token):
     tokens = [
         t
         for t in token.subtree
-        if t.dep_ not in EXCLUDED_FROM_PHRASE and not t.is_punct and not t.is_space
+        if not _is_excluded(t, token) and not t.is_punct and not t.is_space
     ]
 
     if not tokens:
@@ -146,6 +206,15 @@ def _phrase_span(token):
     # something the exclusions removed. Taking the enclosing span and trimming
     # is the standard resolution, and trimming is what keeps "a linear data
     # structure" from becoming ", a linear data structure ,".
+    #
+    # **The right edge has to come from a token that was kept.** An exclusion
+    # that falls *inside* the range is swallowed back in by the enclosing span,
+    # which is why "vertices and edges" survives its excluded `and`. An
+    # exclusion at the edge has nothing beyond it to be swallowed by, which is
+    # how "…consisting of vertices and edges" became "…consisting of vertices":
+    # `edges` is a `conj` and used to be dropped, `vertices` then became the
+    # last kept token, and the span stopped there. `_conjunct_belongs_to_phrase`
+    # is what keeps a nominal conjunct in the kept set.
     span = token.doc[indices[0] : indices[-1] + 1]
 
     while len(span) and (span[0].is_punct or span[0].is_space):
@@ -311,7 +380,15 @@ def _passes_guards(head, subject, definition_span) -> bool:
     if any(token.dep_ == "neg" for token in head.subtree):
         return False
 
-    if head.lemma_.lower() in MODALS:
+    # A modal is normally an `aux` child of the copula rather than the head
+    # itself: in "A stack could be a linear data structure" the head is `be`
+    # and `could` hangs off it. Testing only the head's lemma — which is what
+    # this did — missed the sentence the check above is named for, so hedged
+    # definitions were extracted as facts.
+    if head.lemma_.lower() in MODALS or any(
+        child.dep_ in ("aux", "auxpass") and child.lemma_.lower() in MODALS
+        for child in head.children
+    ):
         return False
 
     # `subject` is the `nsubj` token itself, not a span — `_subject_of` returns
