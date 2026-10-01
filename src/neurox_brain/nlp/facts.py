@@ -546,7 +546,9 @@ def _purpose_patterns(sentence, index):
 _PREDICATE_DROP = frozenset({"mark", "cc", "conj", "advcl", "relcl", "acl", "csubj"})
 
 
-def _predicate_span(verb, exclude=frozenset(), keep_conjunctions=False):
+def _predicate_span(
+    verb, exclude=frozenset(), keep_conjunctions=False, keep_trailing_advcl=False
+):
     """
     A verb and everything that completes it, as a span.
 
@@ -580,6 +582,21 @@ def _predicate_span(verb, exclude=frozenset(), keep_conjunctions=False):
                 # clause is the second step.
                 if current.dep_ == "conj" and keep_conjunctions:
                     break
+
+                # A **trailing** temporal clause is part of the statement, not
+                # framing around it. "Collisions occur when two keys map to the
+                # same bucket" says almost nothing without the condition — the
+                # card read "Collisions occur." — while "When a function is
+                # called, the return address is pushed" is complete on its own
+                # and the leading clause is context the front already implies.
+                # Position against the verb is what separates the two.
+                if (
+                    current.dep_ == "advcl"
+                    and keep_trailing_advcl
+                    and current.i > verb.i
+                ):
+                    break
+
                 return True
             if current.dep_ == "prep" and current.lemma_.lower() in exclude:
                 return True
@@ -748,6 +765,7 @@ def _back_span(complement, pattern):
             complement,
             exclude=exclude,
             keep_conjunctions=pattern == "ordered_chain",
+            keep_trailing_advcl=pattern == "temporal_advcl",
         )
 
     return _phrase_span(complement)
@@ -832,6 +850,17 @@ def extract(doc, salience_map=None) -> list[Fact]:
             confidence = _confidence(
                 base, term_span, back_span, sentence, index, salience_map
             )
+
+            # `temporal_advcl` is the riskiest shape in the module — "when" is
+            # everywhere in course prose — so it is held to a harder gate than
+            # the rest: it survives only when the document itself treats the
+            # term as one of its keywords. A confidence bonus is not enough
+            # here, because the term-POS bonus alone clears the floor for any
+            # noun subject, which is how "number of elements" became a card
+            # front.
+            if pattern == "temporal_advcl":
+                if salience_map is None or not salience_map.is_salient(term):
+                    continue
 
             # The floor is applied here rather than in `selection` so that a
             # fact that cannot be shown is never constructed at all.

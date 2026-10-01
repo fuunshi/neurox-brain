@@ -199,3 +199,60 @@ def test_process_rejects_an_unresolved_pronoun(parse):
 
     for fact in facts.extract(document, salience.build(document)):
         assert "decodes it" not in fact.back
+
+
+# --------------------------------------------------------- temporal clause --- #
+
+
+def test_a_trailing_temporal_clause_stays_in_the_back(parse):
+    """
+    "Collisions occur when two keys map to the same bucket" is one statement.
+
+    Without the condition the card read "Collisions occur." — a sentence that
+    says nothing, from a sentence that says something. The informative half was
+    being discarded as a subordinate clause.
+    """
+    document = parse("Collisions occur when two keys map to the same bucket.")
+
+    fact = _card(document, "collision", salience.build(document))
+
+    assert fact is not None
+    assert "same bucket" in fact.back
+
+
+def test_a_leading_temporal_clause_is_not_repeated(parse):
+    """
+    The other half of the same rule, and the reason it is about position.
+
+    "When a function is called, …" frames the sentence; the statement is the
+    main clause and reads completely without it. Including it would put the
+    whole sentence in the back of a card whose front is one of its nouns.
+    """
+    document = parse(
+        "When a function is called, the return address is pushed onto the stack."
+    )
+
+    fact = _card(document, "return address", salience.build(document))
+
+    assert fact is not None
+    assert not fact.back.startswith("When")
+    assert "pushed onto the stack" in fact.back
+
+
+def test_temporal_advcl_requires_a_document_keyword(parse):
+    """
+    The hardest gate in the module, on the riskiest shape.
+
+    A confidence bonus is not enough: the term-POS bonus alone clears the floor
+    for any noun subject, which is how "number of elements" — a measure phrase,
+    not a topic — became a card front on a real chapter.
+    """
+    text = (
+        "Arrays are of fixed size, so the number of elements must be known when "
+        "the array is created. Hashing maps a key to a bucket, and a collision "
+        "occurs when two keys share a bucket. A collision is resolved by chaining."
+    )
+    document = parse(text)
+
+    for fact in facts.extract(document, salience.build(document)):
+        assert fact.term.lower() != "number of elements"

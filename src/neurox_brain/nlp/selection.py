@@ -153,7 +153,12 @@ def build(definition_list, fact_list, options) -> list[GeneratedCard]:
         per_term.setdefault(term_key, []).append(candidate)
         seen_backs.add(back_key)
 
-    cards.extend(_to_cards(chosen))
+    # The definition cards already claim their terms' bare fronts, and the
+    # label rule has to know that or a term with a definition *and* a fact
+    # produces two cards with the same prompt — which is the one thing the
+    # rule exists to prevent. Found by a test asserting exactly that.
+    occupied = {card.front.lower() for card in cards}
+    cards.extend(_to_cards(chosen, occupied))
 
     return cards
 
@@ -169,17 +174,26 @@ def _candidate_of(fact) -> _Candidate:
     )
 
 
-def _to_cards(candidates: list[_Candidate]) -> list[GeneratedCard]:
+def _to_cards(
+    candidates: list[_Candidate], occupied: set[str] | None = None
+) -> list[GeneratedCard]:
     """
     Turn chosen facts into cards, resolving fronts.
 
     A term with one card keeps the bare term, which is what a reader expects. A
     term with several gets each card labelled, because the alternative is
     duplicate prompts.
+
+    `occupied` carries the terms the definition cards already used, so that a
+    term with one definition and one fact is counted as two cards rather than
+    one.
     """
     counts: dict[str, int] = {}
     for candidate in candidates:
         counts[candidate.term.lower()] = counts.get(candidate.term.lower(), 0) + 1
+
+    for term in occupied or ():
+        counts[term] = counts.get(term, 0) + 1
 
     cards: list[GeneratedCard] = []
 
