@@ -102,3 +102,100 @@ def test_every_fact_is_extractive(parse):
         assert fact.back.rstrip(".").lower() in fact.evidence.rstrip(".").lower(), (
             f"{fact.back!r} is not a span of {fact.evidence!r}"
         )
+
+
+# ------------------------------------------------ comparisons and purpose --- #
+
+
+def test_difference_between_names_both_participants(parse):
+    """
+    A comparison is about a *pair*, and the phrase span has to be split for it.
+
+    The span deliberately keeps nominal coordination — that is what makes
+    "vertices and edges" survive in a definition — but here each half is one
+    participant, so a front of "stack and a queue" would be the wrong card
+    twice over.
+    """
+    document = parse(
+        "The difference between a stack and a queue is the order of removal."
+    )
+
+    fact = _card(document, "stack")
+
+    assert fact is not None
+    assert fact.family == facts.COMPARISON
+    assert fact.other == "queue"
+    assert "and" not in fact.term
+
+
+def test_unlike_keeps_its_negation(parse):
+    """
+    The one place a negation *is* the fact.
+
+    `definitions._passes_guards` rejects negation, and sharing that guard here
+    would delete this card rather than fix it — which is why the comparison
+    family writes its own rule instead of taking a flag on the shared one.
+    """
+    document = parse("Unlike arrays, linked lists do not require contiguous memory.")
+
+    fact = _card(document, "linked lists")
+
+    assert fact is not None
+    assert fact.pattern == "unlike"
+    assert "do not require" in fact.back
+
+
+def test_negation_is_rejected_by_the_other_families(parse):
+    """
+    The same sentence shape the definition guards reject, in a fact family.
+
+    Before this check existed, "linked lists do not require contiguous memory"
+    produced the card "linked lists require contiguous memory" — false rather
+    than merely weak, which is the distinction that matters.
+    """
+    document = parse("Linked lists do not require contiguous memory.")
+
+    assert facts.extract(document, salience.build(document)) == []
+
+
+def test_purpose_accepts_a_modal(parse):
+    """
+    "can be used to" is how course text states a capability.
+
+    The definition guard rejects modals because a hedged *definition* asserts
+    something the source did not. A purpose is the opposite case, and the two
+    guard sets exist separately for exactly this sentence.
+    """
+    document = parse("A stack can be used to reverse a string in place.")
+
+    fact = _card(document, "stack")
+
+    assert fact is not None
+    assert fact.family == facts.PURPOSE
+
+
+def test_process_keeps_its_sequence(parse):
+    """A chain is its conjuncts; dropping them leaves half a procedure."""
+    document = parse("The algorithm first sorts the array and then merges the two halves.")
+
+    fact = _card(document, "algorithm")
+
+    assert fact is not None
+    assert fact.pattern == "ordered_chain"
+    assert "sorts" in fact.back and "merges" in fact.back
+
+
+def test_process_rejects_an_unresolved_pronoun(parse):
+    """
+    "decodes it, and executes it" is a real sentence and a useless card.
+
+    There is no coreference resolution in this stack, so a reader meeting the
+    back out of context cannot tell what "it" refers to. Dropping the sentence
+    is the intended cost.
+    """
+    document = parse(
+        "The CPU fetches the instruction, decodes it, and executes it immediately."
+    )
+
+    for fact in facts.extract(document, salience.build(document)):
+        assert "decodes it" not in fact.back
